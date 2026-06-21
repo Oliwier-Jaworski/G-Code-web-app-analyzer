@@ -13,7 +13,7 @@ import io
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -27,7 +27,13 @@ app = FastAPI(title="G-code Analyzer", version="1.0.0")
 
 
 @app.post("/api/analyze")
-async def analyze_endpoint(file: UploadFile = File(...)) -> JSONResponse:
+async def analyze_endpoint(
+    file: UploadFile = File(...),
+    toolpath: bool = Query(
+        False,
+        description="If true, include a sampled toolpath in the response.",
+    ),
+) -> JSONResponse:
     filename = file.filename or ""
     ext = os.path.splitext(filename)[1].lower()
     if ext not in ALLOWED_EXTS:
@@ -63,7 +69,7 @@ async def analyze_endpoint(file: UploadFile = File(...)) -> JSONResponse:
     )
 
     try:
-        result = analyze(text_stream)
+        result = analyze(text_stream, collect_toolpath=toolpath)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=422, detail=f"Błąd parsowania: {exc}"

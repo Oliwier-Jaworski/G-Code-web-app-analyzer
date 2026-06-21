@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>G-code Analyzer</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
     <style>
       .dropzone.dragover {
         border-color: rgb(99 102 241);
@@ -135,6 +143,10 @@
             <span class="mt-1 block text-xs text-slate-400">
               Skaluje czas druku: 80% = +25% czasu.
             </span>
+            <span
+              data-metric="baseSpeed"
+              class="mt-0.5 block text-xs text-slate-500"
+            ></span>
           </label>
         </div>
       </section>
@@ -239,11 +251,123 @@
         </div>
       </section>
 
+      <section id="viewer" class="mt-8 hidden">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-xl font-semibold">Podgląd toolpathu</h2>
+          <div class="flex items-center gap-2 text-sm">
+            <button
+              type="button"
+              data-view="all"
+              class="view-btn rounded-lg border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50"
+            >
+              Wszystko
+            </button>
+            <button
+              type="button"
+              data-view="extrusion"
+              class="view-btn rounded-lg border border-indigo-500 bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700"
+            >
+              Tylko ekstruzja
+            </button>
+            <button
+              type="button"
+              data-view="layers"
+              class="view-btn rounded-lg border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50"
+            >
+              Po warstwach
+            </button>
+            <button
+              type="button"
+              data-view="solid"
+              class="view-btn rounded-lg border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50"
+            >
+              Bryła
+            </button>
+          </div>
+        </div>
+        <div
+          class="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 shadow-sm"
+          style="aspect-ratio: 16/10;"
+        >
+          <canvas id="viewer-canvas" class="block h-full w-full"></canvas>
+          <div
+            id="viewer-info"
+            class="pointer-events-none absolute bottom-2 left-3 text-xs text-slate-300"
+          >
+            —
+          </div>
+        </div>
+      </section>
+
+      <section id="slicer-meta" class="mt-6 hidden">
+        <div
+          class="rounded-2xl border border-slate-200 bg-slate-100 p-5 text-sm shadow-sm"
+        >
+          <div class="mb-3 flex items-baseline justify-between">
+            <h3 class="text-base font-semibold text-slate-700">
+              Wykryto w pliku (slicer)
+            </h3>
+            <span
+              data-metric="slicerName"
+              class="truncate text-xs text-slate-500"
+            ></span>
+          </div>
+          <dl
+            class="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4"
+          >
+            <div>
+              <dt class="text-xs uppercase tracking-wide text-slate-500">
+                Czas (slicer)
+              </dt>
+              <dd
+                data-metric="slicerTime"
+                class="font-medium text-slate-700"
+              >
+                —
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs uppercase tracking-wide text-slate-500">
+                Filament — długość
+              </dt>
+              <dd
+                data-metric="slicerFilamentLength"
+                class="font-medium text-slate-700"
+              >
+                —
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs uppercase tracking-wide text-slate-500">
+                Filament — masa
+              </dt>
+              <dd
+                data-metric="slicerFilamentMass"
+                class="font-medium text-slate-700"
+              >
+                —
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs uppercase tracking-wide text-slate-500">
+                Wysokość warstwy
+              </dt>
+              <dd
+                data-metric="slicerLayerHeight"
+                class="font-medium text-slate-700"
+              >
+                —
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
       <footer class="mt-12 text-center text-xs text-slate-400">
         FastAPI + Vanilla JS · G-code FDM analyzer
       </footer>
     </div>
 
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
   </body>
 </html>

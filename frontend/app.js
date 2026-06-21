@@ -10,6 +10,43 @@
   const errorBox = document.getElementById("error-box");
   const results = document.getElementById("results");
   const resultsFilename = document.getElementById("results-filename");
+  const slicerSection = document.getElementById("slicer-meta");
+  const viewerSection = document.getElementById("viewer");
+  const viewerCanvas = document.getElementById("viewer-canvas");
+  const viewerInfo = document.getElementById("viewer-info");
+  const viewButtons = document.querySelectorAll(".view-btn");
+
+  let viewerModule = null;
+  let viewerReady = false;
+  const ensureViewer = async () => {
+    if (!viewerModule) {
+      viewerModule = await import("./viewer.js");
+    }
+    if (!viewerReady) {
+      viewerModule.initViewer(viewerCanvas);
+      viewerReady = true;
+    }
+    return viewerModule;
+  };
+
+  const updateViewButtons = (active) => {
+    viewButtons.forEach((btn) => {
+      const isActive = btn.dataset.view === active;
+      btn.classList.toggle("bg-indigo-600", isActive);
+      btn.classList.toggle("text-white", isActive);
+      btn.classList.toggle("border-indigo-500", isActive);
+      btn.classList.toggle("bg-white", !isActive);
+      btn.classList.toggle("border-slate-300", !isActive);
+    });
+  };
+
+  viewButtons.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      updateViewButtons(btn.dataset.view);
+      const v = await ensureViewer();
+      v.setView(btn.dataset.view);
+    });
+  });
   const paramsSection = document.getElementById("params");
   const materialSelect = document.getElementById("material");
   const diameterSelect = document.getElementById("diameter");
@@ -150,6 +187,14 @@
       )} g/cm³`,
     );
 
+    const baseSpeed = lastData.avgPrintSpeedMmS;
+    setMetric(
+      "baseSpeed",
+      Number.isFinite(baseSpeed)
+        ? `Bazowa prędkość druku z gcode: ${fmtNumber(baseSpeed, 1)} mm/s`
+        : "",
+    );
+
     const baseTime = lastData.estimatedTimeS || 0;
     const scaledTime = baseTime / speedFactor;
     setMetric("estimatedTime", fmtTime(scaledTime));
@@ -206,8 +251,105 @@
       `${(data.lineCount ?? 0).toLocaleString("pl-PL")} linii`,
     );
 
+    renderSlicerMeta(data.slicer);
+    renderViewer(data);
+
     results.classList.remove("hidden");
     paramsSection.classList.remove("hidden");
+  };
+
+  const renderViewer = async (data) => {
+    if (!data.toolpath) {
+      viewerSection.classList.add("hidden");
+      return;
+    }
+    viewerSection.classList.remove("hidden");
+    const tp = data.toolpath;
+    viewerInfo.textContent =
+      `${tp.sampledSegments.toLocaleString("pl-PL")} / ` +
+      `${tp.totalSegments.toLocaleString("pl-PL")} segmentów` +
+      (tp.decimationStep > 1 ? ` (co ${tp.decimationStep})` : "");
+    try {
+      const v = await ensureViewer();
+      v.renderToolpath(tp, data.bounds);
+    } catch (err) {
+      console.error("Viewer init failed:", err);
+      viewerSection.classList.add("hidden");
+    }
+  };
+
+  const fmtSignedTime = (deltaSec) => {
+    const sign = deltaSec >= 0 ? "+" : "−";
+    return `${sign}${fmtTime(Math.abs(deltaSec))}`;
+  };
+
+  const fmtSignedAmount = (delta, suffix, digits = 1) => {
+    const sign = delta >= 0 ? "+" : "−";
+    return `${sign}${fmtNumber(Math.abs(delta), digits)} ${suffix}`;
+  };
+
+  const renderSlicerMeta = (slicer) => {
+    if (!slicer) {
+      slicerSection.classList.add("hidden");
+      return;
+    }
+    const hasAny =
+      slicer.name != null ||
+      slicer.timeS != null ||
+      slicer.filamentMm != null ||
+      slicer.filamentG != null ||
+      slicer.layerHeightMm != null;
+    if (!hasAny) {
+      slicerSection.classList.add("hidden");
+      return;
+    }
+    slicerSection.classList.remove("hidden");
+
+    setMetric("slicerName", slicer.name ? slicer.name : "");
+
+    if (Number.isFinite(slicer.timeS) && lastData?.estimatedTimeS != null) {
+      const ours = lastData.estimatedTimeS;
+      const diff = ours - slicer.timeS;
+      setMetric(
+        "slicerTime",
+        `${fmtTime(slicer.timeS)} (nasze: ${fmtTime(ours)}, ${fmtSignedTime(diff)})`,
+      );
+    } else if (Number.isFinite(slicer.timeS)) {
+      setMetric("slicerTime", fmtTime(slicer.timeS));
+    } else {
+      setMetric("slicerTime", "—");
+    }
+
+    if (Number.isFinite(slicer.filamentMm) && lastData?.filamentMm != null) {
+      const diff = lastData.filamentMm - slicer.filamentMm;
+      setMetric(
+        "slicerFilamentLength",
+        `${fmtFilamentLength(slicer.filamentMm)} (${fmtSignedAmount(
+          diff,
+          "mm",
+          1,
+        )})`,
+      );
+    } else if (Number.isFinite(slicer.filamentMm)) {
+      setMetric("slicerFilamentLength", fmtFilamentLength(slicer.filamentMm));
+    } else {
+      setMetric("slicerFilamentLength", "—");
+    }
+
+    if (Number.isFinite(slicer.filamentG)) {
+      setMetric("slicerFilamentMass", fmtMass(slicer.filamentG));
+    } else {
+      setMetric("slicerFilamentMass", "—");
+    }
+
+    if (Number.isFinite(slicer.layerHeightMm)) {
+      setMetric(
+        "slicerLayerHeight",
+        `${fmtNumber(slicer.layerHeightMm, 3)} mm`,
+      );
+    } else {
+      setMetric("slicerLayerHeight", "—");
+    }
   };
 
   materialSelect.addEventListener("change", renderTiles);
@@ -220,7 +362,7 @@
   const uploadWithProgress = (file) =>
     new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", "/api/analyze");
+      xhr.open("POST", "/api/analyze?toolpath=1");
       xhr.responseType = "json";
 
       xhr.upload.addEventListener("progress", (e) => {
