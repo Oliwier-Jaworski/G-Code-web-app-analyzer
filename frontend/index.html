@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>G-code Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+      .dropzone.dragover {
+        border-color: rgb(99 102 241);
+        background-color: rgb(238 242 255);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen bg-slate-50 text-slate-800">
+    <div class="mx-auto max-w-5xl px-4 py-10">
+      <header class="mb-8">
+        <h1 class="text-3xl font-bold tracking-tight">G-code Analyzer</h1>
+        <p class="mt-1 text-slate-500">
+          Wgraj plik <code>.gcode</code> z drukarki 3D FDM i sprawdź jego
+          parametry: zakresy osi, długość ruchów, szacowany czas, warstwy
+          i zużycie filamentu.
+        </p>
+      </header>
+
+      <form id="upload-form" class="mb-8">
+        <label
+          id="dropzone"
+          for="file-input"
+          class="dropzone block cursor-pointer rounded-2xl border-2 border-dashed border-slate-300 bg-white p-8 text-center transition hover:border-indigo-400"
+        >
+          <input
+            id="file-input"
+            type="file"
+            name="file"
+            accept=".gcode,.gco,.g"
+            class="hidden"
+          />
+          <div class="text-lg font-medium text-slate-700">
+            Przeciągnij tutaj plik <span class="text-indigo-600">.gcode</span>
+            albo kliknij, by wybrać
+          </div>
+          <div id="file-info" class="mt-2 text-sm text-slate-500">
+            Brak wybranego pliku
+          </div>
+        </label>
+
+        <div class="mt-4 flex items-center gap-3">
+          <button
+            id="submit-btn"
+            type="submit"
+            class="rounded-xl bg-indigo-600 px-5 py-2.5 font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled
+          >
+            Analizuj
+          </button>
+          <div
+            id="progress-wrap"
+            class="hidden flex-1"
+          >
+            <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+              <div
+                id="progress-bar"
+                class="h-full w-0 bg-indigo-600 transition-[width] duration-150"
+              ></div>
+            </div>
+            <div id="progress-label" class="mt-1 text-xs text-slate-500">0%</div>
+          </div>
+        </div>
+
+        <div
+          id="error-box"
+          class="mt-4 hidden rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+        ></div>
+      </form>
+
+      <section id="params" class="mb-8 hidden">
+        <div class="mb-3 flex items-baseline justify-between">
+          <h2 class="text-xl font-semibold">Parametry</h2>
+          <span class="text-xs text-slate-400">
+            Zmieniają tylko prezentację — nie wymagają ponownej analizy.
+          </span>
+        </div>
+
+        <div
+          class="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-3"
+        >
+          <label class="block">
+            <span class="text-sm font-medium text-slate-600">Materiał</span>
+            <select
+              id="material"
+              class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="PLA" data-density="1.24" selected>
+                PLA (1.24 g/cm³)
+              </option>
+              <option value="PETG" data-density="1.27">PETG (1.27 g/cm³)</option>
+              <option value="ABS" data-density="1.04">ABS (1.04 g/cm³)</option>
+              <option value="ASA" data-density="1.07">ASA (1.07 g/cm³)</option>
+              <option value="TPU" data-density="1.21">TPU (1.21 g/cm³)</option>
+              <option value="Nylon" data-density="1.14">
+                Nylon (1.14 g/cm³)
+              </option>
+              <option value="PC" data-density="1.20">PC (1.20 g/cm³)</option>
+            </select>
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-slate-600">
+              Średnica filamentu
+            </span>
+            <select
+              id="diameter"
+              class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="1.75" selected>1.75 mm</option>
+              <option value="2.85">2.85 mm</option>
+            </select>
+          </label>
+
+          <label class="block">
+            <span class="flex items-center justify-between text-sm font-medium text-slate-600">
+              <span>Mnożnik prędkości</span>
+              <span id="speed-factor-label" class="text-indigo-600">100%</span>
+            </span>
+            <input
+              id="speed-factor"
+              type="range"
+              min="50"
+              max="200"
+              step="5"
+              value="100"
+              class="mt-3 block w-full accent-indigo-600"
+            />
+            <span class="mt-1 block text-xs text-slate-400">
+              Skaluje czas druku: 80% = +25% czasu.
+            </span>
+            <span
+              data-metric="baseSpeed"
+              class="mt-0.5 block text-xs text-slate-500"
+            ></span>
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-slate-600">
+              Cena filamentu [zł/kg]
+            </span>
+            <input
+              id="price-kg"
+              type="number"
+              min="0"
+              step="1"
+              value="90"
+              class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-slate-600">
+              Moc drukarki [W]
+            </span>
+            <input
+              id="power-w"
+              type="number"
+              min="0"
+              step="10"
+              value="120"
+              class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-slate-600">
+              Cena energii [zł/kWh]
+            </span>
+            <input
+              id="price-kwh"
+              type="number"
+              min="0"
+              step="0.01"
+              value="1.00"
+              class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </label>
+        </div>
+      </section>
+
+      <section id="results" class="hidden">
+        <div class="mb-3 flex items-baseline justify-between gap-3">
+          <h2 class="text-xl font-semibold">Wyniki</h2>
+          <div class="flex min-w-0 items-baseline gap-3">
+            <span
+              id="results-filename"
+              class="truncate text-sm text-slate-500"
+            ></span>
+            <button
+              id="export-btn"
+              type="button"
+              class="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+            >
+              Eksportuj JSON
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="text-sm font-medium text-slate-500">Szacowany czas druku</div>
+            <div
+              data-metric="estimatedTime"
+              class="mt-1 text-2xl font-semibold tracking-tight"
+            >
+              —
+            </div>
+            <div
+              data-metric="estimatedTimeDetail"
+              class="mt-1 text-xs text-slate-400"
+            >
+              Model trapezowy przyspieszeń (a=1500 mm/s²) — wartość orientacyjna.
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="text-sm font-medium text-slate-500">Zużycie filamentu</div>
+            <div
+              data-metric="filament"
+              class="mt-1 text-2xl font-semibold tracking-tight"
+            >
+              —
+            </div>
+            <div
+              data-metric="filamentDetail"
+              class="mt-1 text-xs text-slate-400"
+            >
+              Założenia: PLA 1.75 mm, 1.24 g/cm³.
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="text-sm font-medium text-slate-500">Liczba warstw</div>
+            <div
+              data-metric="layers"
+              class="mt-1 text-2xl font-semibold tracking-tight"
+            >
+              —
+            </div>
+            <div
+              data-metric="layerHeight"
+              class="mt-1 text-xs text-slate-400"
+            ></div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="text-sm font-medium text-slate-500">Rozmiar wydruku (X × Y × Z)</div>
+            <div
+              data-metric="size"
+              class="mt-1 text-2xl font-semibold tracking-tight"
+            >
+              —
+            </div>
+            <div
+              data-metric="bounds"
+              class="mt-1 text-xs text-slate-400"
+            ></div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="text-sm font-medium text-slate-500">Łączna droga głowicy</div>
+            <div
+              data-metric="totalDistance"
+              class="mt-1 text-2xl font-semibold tracking-tight"
+            >
+              —
+            </div>
+            <div
+              data-metric="distanceSplit"
+              class="mt-1 text-xs text-slate-400"
+            ></div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="text-sm font-medium text-slate-500">Szacowany koszt</div>
+            <div
+              data-metric="cost"
+              class="mt-1 text-2xl font-semibold tracking-tight"
+            >
+              —
+            </div>
+            <div
+              data-metric="costDetail"
+              class="mt-1 text-xs text-slate-400"
+            ></div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="text-sm font-medium text-slate-500">Plik</div>
+            <div
+              data-metric="fileSize"
+              class="mt-1 text-2xl font-semibold tracking-tight"
+            >
+              —
+            </div>
+            <div
+              data-metric="lineCount"
+              class="mt-1 text-xs text-slate-400"
+            ></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="compare" class="mt-6 hidden">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-xl font-semibold">Porównanie</h2>
+          <div class="flex items-center gap-3">
+            <span id="compare-status" class="text-sm text-slate-500"></span>
+            <label
+              class="cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+            >
+              Porównaj z innym plikiem…
+              <input
+                id="compare-input"
+                type="file"
+                accept=".gcode,.gco,.g"
+                class="hidden"
+              />
+            </label>
+          </div>
+        </div>
+        <div
+          id="compare-table-wrap"
+          class="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm"
+        ></div>
+      </section>
+
+      <section id="viewer" class="mt-8 hidden">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-xl font-semibold">Podgląd toolpathu</h2>
+          <div class="flex items-center gap-2 text-sm">
+            <button
+              type="button"
+              data-view="all"
+              class="view-btn rounded-lg border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50"
+            >
+              Wszystko
+            </button>
+            <button
+              type="button"
+              data-view="extrusion"
+              class="view-btn rounded-lg border border-indigo-500 bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700"
+            >
+              Tylko ekstruzja
+            </button>
+            <button
+              type="button"
+              data-view="layers"
+              class="view-btn rounded-lg border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50"
+            >
+              Po warstwach
+            </button>
+            <button
+              type="button"
+              data-view="solid"
+              class="view-btn rounded-lg border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50"
+            >
+              Bryła
+            </button>
+          </div>
+        </div>
+        <div
+          class="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 shadow-sm"
+          style="aspect-ratio: 16/10;"
+        >
+          <canvas id="viewer-canvas" class="block h-full w-full"></canvas>
+          <div
+            id="viewer-info"
+            class="pointer-events-none absolute bottom-2 left-3 text-xs text-slate-300"
+          >
+            —
+          </div>
+        </div>
+        <div id="layer-controls" class="mt-3 hidden items-center gap-3">
+          <button
+            id="layer-play"
+            type="button"
+            title="Animacja druku"
+            class="w-10 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+          >
+            ▶
+          </button>
+          <input
+            id="layer-slider"
+            type="range"
+            min="1"
+            max="1"
+            step="1"
+            value="1"
+            class="flex-1 accent-indigo-600"
+          />
+          <span
+            id="layer-label"
+            class="w-36 text-right text-sm tabular-nums text-slate-500"
+          >
+            —
+          </span>
+        </div>
+      </section>
+
+      <section id="slicer-meta" class="mt-6 hidden">
+        <div
+          class="rounded-2xl border border-slate-200 bg-slate-100 p-5 text-sm shadow-sm"
+        >
+          <div class="mb-3 flex items-baseline justify-between">
+            <h3 class="text-base font-semibold text-slate-700">
+              Wykryto w pliku (slicer)
+            </h3>
+            <span
+              data-metric="slicerName"
+              class="truncate text-xs text-slate-500"
+            ></span>
+          </div>
+          <dl
+            class="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4"
+          >
+            <div>
+              <dt class="text-xs uppercase tracking-wide text-slate-500">
+                Czas (slicer)
+              </dt>
+              <dd
+                data-metric="slicerTime"
+                class="font-medium text-slate-700"
+              >
+                —
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs uppercase tracking-wide text-slate-500">
+                Filament — długość
+              </dt>
+              <dd
+                data-metric="slicerFilamentLength"
+                class="font-medium text-slate-700"
+              >
+                —
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs uppercase tracking-wide text-slate-500">
+                Filament — masa
+              </dt>
+              <dd
+                data-metric="slicerFilamentMass"
+                class="font-medium text-slate-700"
+              >
+                —
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs uppercase tracking-wide text-slate-500">
+                Wysokość warstwy
+              </dt>
+              <dd
+                data-metric="slicerLayerHeight"
+                class="font-medium text-slate-700"
+              >
+                —
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <footer class="mt-12 text-center text-xs text-slate-400">
+        FastAPI + Vanilla JS · G-code FDM analyzer
+      </footer>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
